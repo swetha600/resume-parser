@@ -1,189 +1,201 @@
 import streamlit as st
+from groq import Groq
 import PyPDF2
-import docx2txt
-import re
-import spacy
-from pathlib import Path
+import docx
 import io
+import json
 
-# Load spaCy model
-try:
-    nlp = spacy.load("en_core_web_sm")
-except:
-    st.error("Please install spaCy and the English model first with:")
-    st.code("pip install spacy\npython -m spacy download en_core_web_sm")
-    st.stop()
+# Initialize Groq client
+GROQ_API_KEY = "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"
 
-class ResumeParser:
-    def __init__(self):
-        self.text = ""
-        self.email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
-        self.phone_pattern = r'(\+\d{1,3}[-.]?)?\b\d{3}[-.]?\d{3}[-.]?\d{4}\b'
-        self.skills_pattern = self._get_skills_pattern()
+def extract_text_from_pdf(file):
+    """Extract text from PDF file"""
+    pdf_reader = PyPDF2.PdfReader(file)
+    text = ""
+    for page in pdf_reader.pages:
+        text += page.extract_text()
+    return text
 
-    def _get_skills_pattern(self):
-        """Define common skills to look for"""
-        skills = [
-            # Programming Languages
-            "Python", "Java", "JavaScript", "C++", "C#", "Ruby", "PHP", "Swift",
-            # Web Technologies
-            "HTML", "CSS", "React", "Angular", "Vue.js", "Node.js", "Django", "Flask",
-            # Databases
-            "SQL", "MySQL", "PostgreSQL", "MongoDB", "Oracle",
-            # Tools & Platforms
-            "Git", "Docker", "AWS", "Azure", "Linux", "Jenkins", "Kubernetes",
-            # Data Science
-            "Machine Learning", "Deep Learning", "TensorFlow", "PyTorch", "Pandas", "NumPy",
-            # Microsoft Office
-            "Excel", "Word", "PowerPoint", "Outlook"
-        ]
-        return r'\b(?:' + '|'.join(skills) + r')\b'
+def extract_text_from_docx(file):
+    """Extract text from DOCX file"""
+    doc = docx.Document(file)
+    text = ""
+    for paragraph in doc.paragraphs:
+        text += paragraph.text + "\n"
+    return text
 
-    def extract_text_from_pdf(self, pdf_file):
-        """Extract text from PDF file"""
-        try:
-            pdf_reader = PyPDF2.PdfReader(pdf_file)
-            text = ""
-            for page in pdf_reader.pages:
-                text += page.extract_text()
-            return text
-        except Exception as e:
-            st.error(f"Error reading PDF: {str(e)}")
-            return ""
+def parse_resume_with_groq(resume_text):
+    """Parse resume using Groq API"""
+    client = Groq(api_key=GROQ_API_KEY)
+    
+    prompt = f"""
+    Analyze the following resume and extract key information in JSON format:
+    
+    Resume:
+    {resume_text}
+    
+    Please provide:
+    1. Contact Information (name, email, phone, location)
+    2. Professional Summary
+    3. Skills (technical and soft skills)
+    4. Work Experience (company, role, duration, responsibilities)
+    5. Education (degree, institution, year)
+    6. Certifications (if any)
+    7. Projects (if any)
+    
+    Format the response as structured JSON.
+    """
+    
+    response = client.chat.completions.create(
+        model="llama-3.1-70b-versatile",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.3,
+        max_tokens=2000
+    )
+    
+    return response.choices[0].message.content
 
-    def extract_text_from_docx(self, docx_file):
-        """Extract text from DOCX file"""
-        try:
-            text = docx2txt.process(docx_file)
-            return text
-        except Exception as e:
-            st.error(f"Error reading DOCX: {str(e)}")
-            return ""
-
-    def parse_resume(self, file):
-        """Parse resume file and extract information"""
-        # Extract text based on file type
-        file_ext = Path(file.name).suffix.lower()
-        
-        if file_ext == '.pdf':
-            self.text = self.extract_text_from_pdf(file)
-        elif file_ext in ['.docx', '.doc']:
-            self.text = self.extract_text_from_docx(file)
-        else:
-            st.error("Unsupported file format. Please upload a PDF or DOCX file.")
-            return None
-
-        if not self.text:
-            return None
-
-        # Process text with spaCy
-        doc = nlp(self.text)
-
-        # Extract information
-        return {
-            'name': self.extract_name(doc),
-            'email': self.extract_email(),
-            'phone': self.extract_phone(),
-            'skills': self.extract_skills(),
-            'education': self.extract_education(doc),
-            'experience': self.extract_experience(doc)
-        }
-
-    def extract_name(self, doc):
-        """Extract name using spaCy NER"""
-        for ent in doc.ents:
-            if ent.label_ == "PERSON":
-                return ent.text
-        return "Not found"
-
-    def extract_email(self):
-        """Extract email using regex"""
-        emails = re.findall(self.email_pattern, self.text)
-        return emails[0] if emails else "Not found"
-
-    def extract_phone(self):
-        """Extract phone number using regex"""
-        phones = re.findall(self.phone_pattern, self.text)
-        return phones[0] if phones else "Not found"
-
-    def extract_skills(self):
-        """Extract skills using regex pattern matching"""
-        skills = re.findall(self.skills_pattern, self.text, re.IGNORECASE)
-        return list(set(skills))
-
-    def extract_education(self, doc):
-        """Extract education information"""
-        education = []
-        edu_keywords = ["degree", "university", "college", "school", "bachelor", "master", "phd"]
-        
-        for sent in doc.sents:
-            if any(keyword in sent.text.lower() for keyword in edu_keywords):
-                education.append(sent.text.strip())
-        
-        return education
-
-    def extract_experience(self, doc):
-        """Extract work experience information"""
-        experience = []
-        exp_keywords = ["experience", "work", "employment", "job", "position"]
-        
-        for sent in doc.sents:
-            if any(keyword in sent.text.lower() for keyword in exp_keywords):
-                experience.append(sent.text.strip())
-        
-        return experience
+def get_improvement_suggestions(resume_text):
+    """Get resume improvement suggestions using Groq API"""
+    client = Groq(api_key=GROQ_API_KEY)
+    
+    prompt = f"""
+    Analyze this resume and provide detailed improvement suggestions:
+    
+    Resume:
+    {resume_text}
+    
+    Please provide:
+    1. Overall Assessment (strengths and weaknesses)
+    2. Content Improvements (what to add, remove, or modify)
+    3. Formatting Suggestions
+    4. Keyword Optimization (for ATS systems)
+    5. Action Verbs to Use
+    6. Quantifiable Achievements (how to add metrics)
+    7. Section-by-Section Recommendations
+    8. Industry-Specific Tips
+    
+    Be specific and actionable in your suggestions.
+    """
+    
+    response = client.chat.completions.create(
+        model="llama-3.1-70b-versatile",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.5,
+        max_tokens=3000
+    )
+    
+    return response.choices[0].message.content
 
 def main():
-    st.set_page_config(page_title="Resume Parser", page_icon="📄")
-    st.title("📄 Resume Parser")
-    st.write("Upload a resume (PDF or DOCX) to extract information")
-
-    # Initialize parser
-    parser = ResumeParser()
-
+    st.set_page_config(page_title="Resume Parser & Analyzer", page_icon="📄", layout="wide")
+    
+    st.title("📄 AI-Powered Resume Parser & Analyzer")
+    st.markdown("Upload your resume to get detailed analysis and improvement suggestions powered by Groq AI")
+    
+    # Sidebar
+    st.sidebar.header("About")
+    st.sidebar.info(
+        "This tool uses Groq's LLaMA model to:\n"
+        "- Parse resume content\n"
+        "- Extract key information\n"
+        "- Provide improvement suggestions\n"
+        "- Optimize for ATS systems"
+    )
+    
     # File upload
-    uploaded_file = st.file_uploader("Choose a resume file", type=["pdf", "docx"])
-
-    if uploaded_file:
-        with st.spinner("Parsing resume..."):
-            # Parse resume
-            results = parser.parse_resume(uploaded_file)
-
-            if results:
-                # Display results
-                st.header("Extracted Information")
-
-                # Basic Information
+    uploaded_file = st.file_uploader(
+        "Upload your resume (PDF or DOCX)", 
+        type=['pdf', 'docx'],
+        help="Upload your resume in PDF or DOCX format"
+    )
+    
+    if uploaded_file is not None:
+        # Extract text based on file type
+        try:
+            if uploaded_file.type == "application/pdf":
+                resume_text = extract_text_from_pdf(uploaded_file)
+            elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+                resume_text = extract_text_from_docx(uploaded_file)
+            else:
+                st.error("Unsupported file format")
+                return
+            
+            st.success("✅ Resume uploaded successfully!")
+            
+            # Display extracted text
+            with st.expander("📝 View Extracted Text"):
+                st.text_area("Resume Content", resume_text, height=300)
+            
+            # Create tabs for different analyses
+            tab1, tab2 = st.tabs(["📊 Parsed Information", "💡 Improvement Suggestions"])
+            
+            with tab1:
+                st.header("Parsed Resume Information")
+                with st.spinner("Analyzing resume..."):
+                    parsed_data = parse_resume_with_groq(resume_text)
+                    st.markdown(parsed_data)
+            
+            with tab2:
+                st.header("Resume Improvement Suggestions")
+                with st.spinner("Generating improvement suggestions..."):
+                    suggestions = get_improvement_suggestions(resume_text)
+                    st.markdown(suggestions)
+                
+                # Additional features
+                st.subheader("🎯 Quick Tips")
                 col1, col2 = st.columns(2)
+                
                 with col1:
-                    st.subheader("Basic Information")
-                    st.write(f"**Name:** {results['name']}")
-                    st.write(f"**Email:** {results['email']}")
-                    st.write(f"**Phone:** {results['phone']}")
-
-                # Skills
+                    st.info(
+                        "**ATS Optimization:**\n"
+                        "- Use standard section headers\n"
+                        "- Include relevant keywords\n"
+                        "- Avoid tables and graphics\n"
+                        "- Use common fonts"
+                    )
+                
                 with col2:
-                    st.subheader("Skills")
-                    if results['skills']:
-                        st.write(", ".join(results['skills']))
-                    else:
-                        st.write("No skills found")
-
-                # Education
-                st.subheader("Education")
-                if results['education']:
-                    for edu in results['education']:
-                        st.write(f"- {edu}")
-                else:
-                    st.write("No education information found")
-
-                # Experience
-                st.subheader("Experience")
-                if results['experience']:
-                    for exp in results['experience']:
-                        st.write(f"- {exp}")
-                else:
-                    st.write("No experience information found")
+                    st.info(
+                        "**Content Tips:**\n"
+                        "- Start bullets with action verbs\n"
+                        "- Quantify achievements\n"
+                        "- Tailor to job description\n"
+                        "- Keep it concise (1-2 pages)"
+                    )
+        
+        except Exception as e:
+            st.error(f"Error processing resume: {str(e)}")
+    
+    else:
+        # Display instructions
+        st.info("👆 Please upload your resume to get started")
+        
+        st.markdown("---")
+        st.subheader("What This Tool Analyzes:")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.markdown("**📋 Content Analysis**")
+            st.write("- Contact information")
+            st.write("- Professional summary")
+            st.write("- Work experience")
+            st.write("- Education & skills")
+        
+        with col2:
+            st.markdown("**🎨 Format Review**")
+            st.write("- Structure & layout")
+            st.write("- Section organization")
+            st.write("- Readability")
+            st.write("- ATS compatibility")
+        
+        with col3:
+            st.markdown("**💡 Suggestions**")
+            st.write("- Content improvements")
+            st.write("- Keyword optimization")
+            st.write("- Achievement metrics")
+            st.write("- Industry best practices")
 
 if __name__ == "__main__":
     main()
