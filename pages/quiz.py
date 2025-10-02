@@ -9,7 +9,7 @@ load_dotenv()
 
 def initialize_groq_client():
     # Get API key from hardcoded value
-    api_key = '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'
+    api_key = "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"
     return Groq(api_key=api_key)
 
 def generate_questions(client, job_description, num_questions=5):
