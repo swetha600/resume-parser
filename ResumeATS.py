@@ -5,7 +5,7 @@ import PyPDF2
 import io
 
 # Initialize Groq client - Use environment variable in production!
-client = Groq(api_key="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")
+client = Groq(api_key="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")
 
 def extract_text_from_pdf(pdf_file):
     pdf_reader = PyPDF2.PdfReader(pdf_file)
@@ -36,7 +36,7 @@ def analyze_resume(resume_text, job_description):
     
     try:
         response = client.chat.completions.create(
-            model="mixtral-8x7b-32768",
+            model="llama-3.3-70b-versatile",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
             max_tokens=1000
@@ -73,4 +73,5 @@ if st.button("Analyze Resume") and uploaded_file and job_description:
         - Keep formatting clean and consistent
         - Proofread carefully for errors
         - Use action verbs to describe your experiences
+
         """)
