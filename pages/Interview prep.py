@@ -4,7 +4,7 @@ from groq import Groq
 import json
 
 # Initialize Groq client - Use environment variable in production!
-client = Groq(api_key="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")
+client = Groq(api_key="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")
 
 def extract_text_from_pdf(pdf_file):
     pdf_reader = PyPDF2.PdfReader(pdf_file)
@@ -114,4 +114,5 @@ with st.sidebar:
     - Keep answers concise but detailed
     - Focus on measurable impacts
     - Be honest and authentic
+
     """)
